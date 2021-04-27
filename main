@@ -1,0 +1,231 @@
+#include "trace-2d.h"
+#include <assert.h>
+#include <stdbool.h>
+#include <stdlib.h>
+
+const int INVALID_GAME = -1;
+const int TIE = 1;
+const int MAX_BOARD_SIZE = 1024;
+
+// global constants
+const int P1_PIECE = 1;
+const int P2_PIECE = 2;
+const int EMPTY_SLOT = 0;
+
+// structure
+struct conn_grid {
+  int width;
+  int height;
+  int len;
+  int data[1024];
+};
+
+// max(x,y) returns the maximum value between x and y
+static int max(int x, int y) {
+  if (x < y)
+    return y;
+  else 
+    return x;
+}
+
+// init_grid(width, height, len, cg) initializes the width, height and 
+//     length (len) in cg
+// effects: modifies cg
+static void init_grid(int width, int height, int len, struct conn_grid *cg) {
+  cg->width = width;
+  cg->height = height;
+  cg->len = len;
+}
+
+// check_column(column, cg) returns true if the given colomn is not empty
+//      and false otherwise
+static bool check_column(int column, const struct conn_grid *cg) {
+  int pos = cg->height - 1;
+  while(pos >= 0) {
+    if (cg->data[pos * cg->width + column] == EMPTY_SLOT) {
+      break;
+    } else {
+      pos--;
+    }
+  }
+  if (pos > 0)
+    return false;
+  else 
+    return true;
+}
+
+// add_move(column, piece, cg) inserts the piece in the given column of cg
+// effects: modifies cg
+static void add_move(int column, int piece, struct conn_grid *cg) {
+  int pos;
+  for (int row = 0; row < cg->height; ++row) {
+    pos = row * cg->width + column;
+    if (cg->data[pos] == EMPTY_SLOT) {
+      cg->data[pos] = piece;
+      break;
+    }
+  }
+}
+
+// check_vertical(pos, piece, cg) returns true if cg has a vertical line win
+//     starting from pos with the given piece and false otherwise
+static bool check_vertical(int pos, int piece, const struct conn_grid *cg) {
+  int count = 0;
+  while (pos < (cg->width * cg->height)) {
+    if (cg->data[pos] == piece)
+      count++;
+    else if (cg->data[pos] != piece)
+      break;
+    pos = pos + cg->width;
+  }
+  if (count == cg->len)
+    return true;
+  else 
+    return false;
+}
+
+// check_horizontal(pos, piece, cg) returns true if cg has a horizontal line win
+//     starting from pos with the given piece and false otherwise
+static bool check_horizontal(int pos, int piece, const struct conn_grid *cg) {
+  int count = 1;
+  int prev_pos = pos;
+  pos = pos + 1;
+  while (count <= cg->len && (pos % cg->width) < cg->width &&
+         (cg->data[prev_pos] == piece) && 
+         (pos % cg->width) > (prev_pos % cg->width)) {
+    if (cg->data[pos] == piece)
+      count++;
+    else if (cg->data[pos] != piece)
+      break;
+    prev_pos = pos;
+    pos = pos + 1;
+  }
+  if (count == cg->len)
+    return true;
+  else 
+    return false;
+}
+
+// check_diagonal_r(pos, piece, cg) returns true if cg has an increasing 
+//   diagonal line (going towards top right) win starting from pos with the 
+//   given piece and false otherwise
+static bool check_diagonal_r(int pos, int piece, const struct conn_grid *cg) {
+  int count = 1;
+  int prev_pos = pos;
+  pos = pos + cg->width + 1;
+  while (count <= cg->len && pos < cg->width * cg->height &&
+         (pos % cg->width) < cg->width && (cg->data[prev_pos] == piece) &&
+         (pos % cg->width) > (prev_pos % cg->width)) {
+    if (cg->data[pos] == piece)
+      count++;
+    else if (cg->data[pos] != piece)
+      break;
+    prev_pos = pos;
+    pos = pos + cg->width + 1;
+  }
+  if (count == cg->len)
+    return true;
+  else
+    return false;
+}
+
+// check_diagonal_l(pos, piece, cg) returns true if cg has a decreasing
+//   diagonal line (going towards top left) win starting from pos with the 
+//   given piece and false otherwise
+static bool check_diagonal_l(int pos, int piece, const struct conn_grid *cg) {
+  int count = 1;
+  int prev_pos = pos;
+  pos = pos + cg->width - 1;
+  while (count <= cg->len && pos < cg->width * cg->height &&
+         (pos % cg->width) >= 0 && (cg->data[prev_pos] == piece) &&
+         (pos % cg->width) < (prev_pos % cg->width)) {
+    if (cg->data[pos] == piece)
+      count++;
+    else if (cg->data[pos] != piece)
+      break;
+    prev_pos = pos;
+    pos = pos + cg->width - 1;
+  }
+  if (count == cg->len)
+    return true;
+  else
+    return false;
+}
+
+// check_for_win(piece, cg) returns true if there is any win for the given
+//     piece in cg and false otherwise
+static bool check_for_win(int piece, const struct conn_grid *cg) {
+  int pos = 0;
+  while(pos <= cg->width * cg->height ) {
+    if (pos == cg->width * cg->height)
+      break;
+    if (check_vertical(pos, piece, cg) || check_horizontal(pos, piece, cg) ||
+          check_diagonal_r(pos, piece, cg) || check_diagonal_l(pos, piece, cg))
+        break;
+    pos++;
+  }
+  if (pos == cg->width * cg->height)
+    return false;
+  else 
+    return true;
+}
+
+// check_for_tie(cg) produces true if cg has no more empty slots for pieces
+//     and false otherwise
+static bool check_for_tie(const struct conn_grid *cg) {
+  int pos = 0;
+  while(pos <= cg->width * cg->height) {
+    if (pos == cg->width * cg->height)
+      break;
+    if (cg->data[pos] == EMPTY_SLOT)
+      break;
+    pos++;
+  }
+  if (pos == (cg->width * cg->height))
+    return true;
+  else
+    return false;
+}
+
+// see connect.h for more details
+int connect_analysis(const int moves[], int width, int height, int length) {
+  assert(2 < width);
+  assert(2 < height);
+  assert(width * height <= MAX_BOARD_SIZE);
+  assert(2 < length);
+  assert(length <= max(width, height));
+  
+  struct conn_grid cg = {EMPTY_SLOT};
+  int move = 0; 
+  int piece = P1_PIECE;
+  init_grid(width, height, length, &cg); 
+  while(true) {
+    if (moves[move] >= cg.width || check_column(moves[move], &cg)) { 
+      return INVALID_GAME;
+      break;
+    } else {
+      add_move(moves[move], piece, &cg);
+      move++;
+      if (check_for_win(piece, &cg)) {
+        if (piece == P1_PIECE) {
+          return move;
+          break;
+        } else {
+          return -move;
+          break;
+        }
+      }
+      
+      if (piece == P1_PIECE)
+        piece = P2_PIECE;
+      else
+        piece = P1_PIECE;
+    
+      if (check_for_tie(&cg)) {
+        return TIE;
+        break;
+      }
+    }
+  }
+}
+
